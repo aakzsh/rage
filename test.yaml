@@ -1,0 +1,18 @@
+# test.yaml
+host: "http://127.0.0.1:5000"
+users: 20000
+rampup: 30
+runtime: 300
+sleep: 10
+steps:
+  - get:
+      endpoint: "/v1/login"
+      headers: {}
+  - post:
+      endpoint: "/v1/contact"
+      headers: {}
+      body:
+        email: "aakash@gmail.com"
+peak-tps: 200
+common-headers:
+  platform: "web"
