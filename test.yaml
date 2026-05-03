@@ -1,18 +1,102 @@
 # test.yaml
 host: "http://127.0.0.1:5000"
-users: 20000
+testname: "debugtest"
+users: 1000
 rampup: 30
 runtime: 300
-sleep: 10
+sleep: 2
 steps:
   - get:
       endpoint: "/v1/login"
-      headers: {}
   - post:
       endpoint: "/v1/contact"
-      headers: {}
+      headers: {"X-Priority": "High"}
       body:
         email: "aakash@gmail.com"
-peak-tps: 200
+  - get:
+      endpoint: "/v2/profile"
+  - get:
+      endpoint: "/v1/products/list"
+  - post:
+      endpoint: "/v1/cart/add"
+      body: {"item_id": 101, "qty": 1}
+  - get:
+      endpoint: "/v1/search?q=rust"
+  - get:
+      endpoint: "/v1/notifications"
+  - post:
+      endpoint: "/v1/checkout"
+      body: {"payment_method": "card"}
+  - get:
+      endpoint: "/v1/orders/history"
+  - get:
+      endpoint: "/v1/settings"
+  - post:
+      endpoint: "/v1/settings/update"
+      body: {"theme": "dark"}
+  - get:
+      endpoint: "/v1/health"
+  - get:
+      endpoint: "/v1/metrics"
+  - get:
+      endpoint: "/v1/inventory/101"
+  - post:
+      endpoint: "/v1/support/ticket"
+      body: {"title": "Slow load", "desc": "UI is lagging"}
+  - get:
+      endpoint: "/v1/blog/posts"
+  - get:
+      endpoint: "/v1/blog/categories"
+  - get:
+      endpoint: "/v1/comments/recent"
+  - post:
+      endpoint: "/v1/newsletter/subscribe"
+      body: {"email": "user@example.com"}
+  - get:
+      endpoint: "/v1/tags"
+  - get:
+      endpoint: "/v1/users/followers"
+  - get:
+      endpoint: "/v1/users/following"
+  - post:
+      endpoint: "/v1/feedback"
+      body: {"rating": 5}
+  - get:
+      endpoint: "/v1/faq"
+  - get:
+      endpoint: "/v1/tos"
+  - get:
+      endpoint: "/v1/privacy"
+  - post:
+      endpoint: "/v1/upload/avatar"
+      body: {"url": "http://img.com/a.jpg"}
+  - get:
+      endpoint: "/v1/analytics/dashboard"
+  - get:
+      endpoint: "/v1/system/status"
+  - post:
+      endpoint: "/v1/auth/refresh"
+      body: {"token": "xyz123"}
+  - get:
+      endpoint: "/v1/billing/invoices"
+  - get:
+      endpoint: "/v1/billing/methods"
+  - post:
+      endpoint: "/v1/coupons/apply"
+      body: {"code": "RUST20"}
+  - get:
+      endpoint: "/v1/help/docs"
+  - get:
+      endpoint: "/v1/events/upcoming"
+  - post:
+      endpoint: "/v1/events/register"
+      body: {"event_id": 99}
+  - get:
+      endpoint: "/v1/discovery/featured"
+  - get:
+      endpoint: "/v1/account/security"
+  - get:
+      endpoint: "/v1/version"
+peak-tps: 500
 common-headers:
   platform: "web"

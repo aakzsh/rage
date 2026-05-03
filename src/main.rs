@@ -1,98 +1,37 @@
-use serde::Deserialize;
-use std::{collections::HashMap, fs, sync::{Arc, Mutex}, sync::atomic::{AtomicU64, Ordering}, time::{Duration, Instant}};
+mod config;
+mod stats;
+mod engine;
+
+use std::{fs, sync::{Arc, Mutex}, sync::atomic::{AtomicU64, Ordering}, time::{Duration, Instant}};
 use tokio::time::{sleep, timeout};
-use comfy_table::{Table, presets::UTF8_FULL, Cell, Color, Attribute};
-
-#[derive(Debug, Deserialize, Clone)]
-struct TestConfig {
-    host: String,
-    users: u32,
-    rampup: u64,
-    runtime: u64,
-    sleep: Option<u64>,
-    #[serde(rename = "peak-tps")]
-    peak_tps: Option<u32>,
-    steps: Vec<HashMap<String, serde_yaml::Value>>,
-}
-
-#[derive(Default, Clone)]
-struct EndpointStats {
-    requests: u64,
-    success: u64,
-    failure: u64,
-}
-
-struct GlobalStats {
-    endpoints: HashMap<String, EndpointStats>,
-    start_time: Instant,
-    active_users: u32,
-}
+use config::TestConfig;
+use stats::{GlobalStats};
 
 #[tokio::main]
 async fn main() {
-    let yaml_content = fs::read_to_string("test.yaml").expect("File not found");
-    let config: TestConfig = serde_yaml::from_str(&yaml_content).expect("Invalid YAML");
+    // 1. Load Configuration
+    let yaml_content = fs::read_to_string("test.yaml").expect("File test.yaml not found");
+    let config: TestConfig = serde_yaml::from_str(&yaml_content).expect("Invalid YAML format");
     
+    // 2. Initialize Shared State
     let stats = Arc::new(Mutex::new(GlobalStats {
-        endpoints: HashMap::new(),
+        endpoints: std::collections::HashMap::new(),
         start_time: Instant::now(),
         active_users: 0,
     }));
 
     let total_runtime = config.runtime;
     let start_instant = stats.lock().unwrap().start_time;
-    let stats_for_reporter = Arc::clone(&stats);
 
-    // 1. REPORTER TASK
-    tokio::spawn(async move {
-        loop {
-            sleep(Duration::from_secs(2)).await;
-            let s = stats_for_reporter.lock().unwrap();
-            let elapsed = s.start_time.elapsed().as_secs();
-            
-            print!("{esc}c", esc = 27 as char);
-            let mut table = Table::new();
-            table.load_preset(UTF8_FULL).set_header(vec!["Method", "Endpoint", "# Req", "# Success", "# Fail", "Avg TPS"]);
+    // 3. Start the Reporter Task (from stats.rs)
+    stats::spawn_reporter(Arc::clone(&stats), total_runtime);
 
-            let mut total_req = 0;
-            let mut total_success = 0;
-            let mut total_fail = 0;
-
-            for (name, estats) in &s.endpoints {
-                let tps = if elapsed > 0 { estats.requests as f64 / elapsed as f64 } else { 0.0 };
-                let parts: Vec<&str> = name.splitn(2, ' ').collect();
-                total_req += estats.requests;
-                total_success += estats.success;
-                total_fail += estats.failure;
-
-                table.add_row(vec![
-                    parts.get(0).unwrap_or(&"-").to_string(), parts.get(1).unwrap_or(&"-").to_string(),
-                    estats.requests.to_string(), estats.success.to_string(), estats.failure.to_string(),
-                    format!("{:.2}", tps),
-                ]);
-            }
-
-            let total_tps = if elapsed > 0 { total_req as f64 / elapsed as f64 } else { 0.0 };
-            table.add_row(vec![
-                Cell::new("TOTAL").add_attribute(Attribute::Bold).fg(Color::Cyan),
-                Cell::new("All Endpoints").add_attribute(Attribute::Italic),
-                Cell::new(total_req).add_attribute(Attribute::Bold),
-                Cell::new(total_success).fg(Color::Green),
-                Cell::new(total_fail).fg(Color::Red),
-                Cell::new(format!("{:.2}", total_tps)).add_attribute(Attribute::Bold).fg(Color::Yellow),
-            ]);
-
-            println!("🚀 Global Load Test: {}s / {}s | Active Users: {}", elapsed, total_runtime, s.active_users);
-            println!("{}", table);
-            if elapsed >= total_runtime { break; }
-        }
-    });
-
-    // 2. USER EXECUTION LOGIC
+    // 4. Prepare User Spawning Logic
     let mut handles = vec![];
+    // Calculate delay between spawning users to respect rampup
     let spawn_delay_ms = (config.rampup as f64 * 1000.0) / (config.users as f64).max(1.0);
-
-    // FIX: Using AtomicU64 instead of Mutex for the ticker
+    
+    // Global Atomic counter for TPS pacing across all threads
     let global_ticker = Arc::new(AtomicU64::new(0));
 
     for i in 0..config.users {
@@ -101,23 +40,29 @@ async fn main() {
         let ticker_clone = Arc::clone(&global_ticker);
 
         let handle = tokio::spawn(async move {
+            // Precise Ramp-up: staggering user start times
             let my_delay = Duration::from_millis((i as f64 * spawn_delay_ms) as u64);
             sleep(my_delay).await;
 
             { stats_clone.lock().unwrap().active_users += 1; }
 
-            let client = reqwest::Client::builder().timeout(Duration::from_secs(5)).build().unwrap();
+            // One client per user (reuses connections internally)
+            let client = reqwest::Client::builder()
+                .timeout(Duration::from_secs(5))
+                .build()
+                .unwrap();
 
             while start_instant.elapsed().as_secs() < cfg.runtime {
                 for step_map in &cfg.steps {
                     for (method, details) in step_map {
                         
-                        // --- ACCURATE GLOBAL TPS PACING ---
+                        // --- GLOBAL TPS PACING (Linear Ramp Support) ---
                         if let Some(peak) = cfg.peak_tps {
                             loop {
                                 let elapsed = start_instant.elapsed().as_secs_f64();
                                 if elapsed >= cfg.runtime as f64 { break; }
 
+                                // Calculate the "Target Area" under the TPS curve
                                 let expected_reqs = if elapsed < cfg.rampup as f64 {
                                     (elapsed.powi(2) / (2.0 * cfg.rampup as f64)) * peak as f64
                                 } else {
@@ -126,29 +71,49 @@ async fn main() {
                                     ramp_area + constant_area
                                 };
 
-                                // Atomic check (No MutexGuard held across .await)
                                 let current = ticker_clone.load(Ordering::Relaxed);
                                 if (current as f64) < expected_reqs {
-                                    // Try to increment. If someone else beat us to it, loop again.
                                     if ticker_clone.compare_exchange(current, current + 1, Ordering::SeqCst, Ordering::Relaxed).is_ok() {
                                         break; 
                                     }
                                 }
-                                sleep(Duration::from_millis(10)).await;
+                                // Back-off slightly to reduce CPU spinning
+                                sleep(Duration::from_millis(15)).await;
                             }
                         }
 
                         let endpoint = details.get("endpoint").and_then(|v| v.as_str()).unwrap_or("/");
                         let method_upper = method.to_uppercase();
-                        let is_success = execute_request(&client, &cfg.host, &method_upper, endpoint, details).await;
+                        
+                        // --- MEASURE LATENCY ---
+                        let req_start = Instant::now();
+                        
+                        let is_success = engine::execute_request(
+                            &client, 
+                            &cfg.host, 
+                            &method_upper, 
+                            endpoint, 
+                            details, 
+                            &cfg.common_headers
+                        ).await;
 
+                        let duration = req_start.elapsed();
+
+                        // --- UPDATE STATS ---
                         {
                             let mut s = stats_clone.lock().unwrap();
                             let entry = s.endpoints.entry(format!("{} {}", method_upper, endpoint)).or_default();
+                            
                             entry.requests += 1;
                             if is_success { entry.success += 1; } else { entry.failure += 1; }
+                            
+                            // Latency aggregation
+                            entry.total_response_time += duration;
+                            if duration < entry.min_response_time { entry.min_response_time = duration; }
+                            if duration > entry.max_response_time { entry.max_response_time = duration; }
                         }
 
+                        // Fallback sleep if no global pacing is defined
                         if cfg.peak_tps.is_none() {
                             if let Some(sl) = cfg.sleep { sleep(Duration::from_secs(sl)).await; }
                         }
@@ -160,19 +125,16 @@ async fn main() {
         handles.push(handle);
     }
 
+    // 5. Hard Runtime Cutoff
+    // We wait for all handles to finish, but force exit after runtime + 1s buffer
+    // let _ = timeout(Duration::from_secs(total_runtime + 1), async {
+    //     for h in handles { let _ = h.await; }
+    // }).await;
     let _ = timeout(Duration::from_secs(total_runtime + 1), async {
         for h in handles { let _ = h.await; }
     }).await;
 
-    println!("\n🏁 Test Finished.");
-}
+    stats::save_to_csv(Arc::clone(&stats), &config.testname);
 
-async fn execute_request(client: &reqwest::Client, host: &str, method: &str, endpoint: &str, details: &serde_yaml::Value) -> bool {
-    let url = format!("{}{}", host.trim_end_matches('/'), endpoint);
-    let rb = match method {
-        "GET" => client.get(&url),
-        "POST" => client.post(&url).json(&details.get("body").unwrap_or(&serde_yaml::Value::Null)),
-        _ => return false,
-    };
-    rb.send().await.map(|r| r.status().is_success()).unwrap_or(false)
+    println!("\n🏁 Test Finished.");
 }
