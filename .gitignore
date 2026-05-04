@@ -2,3 +2,4 @@ target/
 app.py
 venv/
 *.csv
+*.jsonl

@@ -18,3 +18,10 @@ Use `test.yaml` to define all your test configurations
 2. ```cargo run --release```
 
 3. Analyse results from the output CSV
+
+# Current Bottlenecks
+using single cores - done
+tps not reaching properly - to check
+network up down not reflecting correctly - done
+memory in percentage - done
+active users graph - done [very basic]

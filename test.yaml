@@ -1,10 +1,11 @@
 # test.yaml
 host: "http://127.0.0.1:5000"
 testname: "debugtest"
-users: 1000
-rampup: 30
+max_cores: 6
+users: 10000
+rampup: 100
 runtime: 300
-sleep: 2
+sleep: 5
 steps:
   - get:
       endpoint: "/v1/login"
@@ -47,33 +48,6 @@ steps:
       endpoint: "/v1/blog/posts"
   - get:
       endpoint: "/v1/blog/categories"
-  - get:
-      endpoint: "/v1/comments/recent"
-  - post:
-      endpoint: "/v1/newsletter/subscribe"
-      body: {"email": "user@example.com"}
-  - get:
-      endpoint: "/v1/tags"
-  - get:
-      endpoint: "/v1/users/followers"
-  - get:
-      endpoint: "/v1/users/following"
-  - post:
-      endpoint: "/v1/feedback"
-      body: {"rating": 5}
-  - get:
-      endpoint: "/v1/faq"
-  - get:
-      endpoint: "/v1/tos"
-  - get:
-      endpoint: "/v1/privacy"
-  - post:
-      endpoint: "/v1/upload/avatar"
-      body: {"url": "http://img.com/a.jpg"}
-  - get:
-      endpoint: "/v1/analytics/dashboard"
-  - get:
-      endpoint: "/v1/system/status"
   - post:
       endpoint: "/v1/auth/refresh"
       body: {"token": "xyz123"}
@@ -84,19 +58,6 @@ steps:
   - post:
       endpoint: "/v1/coupons/apply"
       body: {"code": "RUST20"}
-  - get:
-      endpoint: "/v1/help/docs"
-  - get:
-      endpoint: "/v1/events/upcoming"
-  - post:
-      endpoint: "/v1/events/register"
-      body: {"event_id": 99}
-  - get:
-      endpoint: "/v1/discovery/featured"
-  - get:
-      endpoint: "/v1/account/security"
-  - get:
-      endpoint: "/v1/version"
 peak-tps: 500
-common-headers:
+common_headers:
   platform: "web"
