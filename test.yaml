@@ -1,11 +1,13 @@
 # test.yaml
-host: "http://127.0.0.1:5000"
-testname: "debugtest"
-max_cores: 6
-users: 10000
-rampup: 100
-runtime: 300
-sleep: 5
+host: "http://127.0.0.1:8080"
+testname: "20k_benchmarking"
+max_cores: -1
+users: 20000
+rampup: 60
+session_duration: 120
+runtime: 200
+sleep: 2
+
 steps:
   - get:
       endpoint: "/v1/login"
@@ -58,6 +60,6 @@ steps:
   - post:
       endpoint: "/v1/coupons/apply"
       body: {"code": "RUST20"}
-peak-tps: 500
+# peak-tps: 2000
 common_headers:
   platform: "web"

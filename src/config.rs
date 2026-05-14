@@ -36,6 +36,8 @@ pub struct TestConfig {
 
     /// Optional sleep time between steps (only used if peak_tps is not set)
     pub sleep: Option<u64>,
+
+    pub session_duration: Option<u64>,
 }
 
 /// Default value for max_cores if omitted from YAML

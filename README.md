@@ -25,3 +25,10 @@ tps not reaching properly - to check
 network up down not reflecting correctly - done
 memory in percentage - done
 active users graph - done [very basic]
+
+# Code Review
+1. apis calling - good
+2. tps maintenance - good
+
+3. reporting (html with json input) - done
+4. runtime user graph - done

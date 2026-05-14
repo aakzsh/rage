@@ -9,20 +9,21 @@ use tokio::sync::mpsc;
 #[derive(Serialize)]
 pub struct LogEvent {
     pub timestamp: u64,
-    pub event_type: String, 
+    pub event_type: String,
     pub endpoint: Option<String>,
     pub response_time_ms: Option<u128>,
     pub status: Option<bool>,
     pub tps: f64,
     pub cpu_usage: f32,
     pub mem_mb: u64,
+    pub active_users: u32, // <--- Add this field
 }
 
 /// Spawns a background task that listens for log events and writes them to disk.
 /// Returns a sender handle that can be cloned and passed to workers.
 pub fn spawn_logger(test_name: String) -> mpsc::UnboundedSender<LogEvent> {
     let (tx, mut rx) = mpsc::unbounded_channel::<LogEvent>();
-    let filename = format!("{}_log.jsonl", test_name);
+    let filename = format!("reports/{}_log.jsonl", test_name);
 
     tokio::spawn(async move {
         // Open file in append mode, create if it doesn't exist
