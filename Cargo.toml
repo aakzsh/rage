@@ -18,3 +18,4 @@ terminal_size = "0.4"
 tokio-util = "0.7.18"
 clap = { version = "4.0", features = ["derive"] }
 chrono = "0.4"
+rlimit = "0.10"

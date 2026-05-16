@@ -1,12 +1,12 @@
 # test.yaml
 host: "http://127.0.0.1:8080"
-testname: "20k_benchmarking"
+testname: "new_report"
 max_cores: -1
-users: 20000
+users: 200000
 rampup: 60
 session_duration: 120
-runtime: 200
-sleep: 2
+runtime: 170
+sleep: 5
 
 steps:
   - get:

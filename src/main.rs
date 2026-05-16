@@ -2,16 +2,44 @@ mod config;
 mod stats;
 mod engine;
 mod logger;
+mod report;
+mod report_modern;
 
 use std::{fs, sync::{Arc, Mutex}, sync::atomic::{AtomicU64, Ordering}, time::{Duration, Instant}};
 use tokio::time::{sleep};
 use tokio_util::sync::CancellationToken; // Ensure tokio-util is in Cargo.toml
 use config::TestConfig;
 use stats::GlobalStats;
+use rlimit::{getrlimit, setrlimit, Resource};
+
+
+fn tune_system_limits() -> Result<(), Box<dyn std::error::Error>> {
+    // 1. Get the current limits
+    // Soft limit is what's currently enforced; Hard limit is the maximum allowed.
+    let (soft, hard) = getrlimit(Resource::NOFILE)?;
+    println!("Current ulimit -n: soft={}, hard={}", soft, hard);
+
+    // 2. Define your target (e.g., 64k or 100k)
+    let target_limit = 65536;
+
+    // 3. Set the new limit
+    // We try to set the soft limit to our target, but we cannot exceed the hard limit.
+    if soft < target_limit {
+        let new_soft = target_limit.min(hard);
+        setrlimit(Resource::NOFILE, new_soft, hard)?;
+        println!("🚀 ulimit -n updated to {}", new_soft);
+    }
+
+    Ok(())
+}
 
 fn main() {
     let yaml_content = fs::read_to_string("test.yaml").expect("File not found");
     let config: TestConfig = serde_yaml::from_str(&yaml_content).expect("Invalid YAML");
+
+    if let Err(e) = tune_system_limits() {
+        eprintln!("⚠️ Warning: Could not increase ulimit: {}", e);
+    }
 
     let available_cores = num_cpus::get();
     let target_cores = match config.max_cores {
@@ -37,13 +65,13 @@ fn main() {
     runtime.block_on(run_engine(config, target_cores));
 }
 
-fn find_python() -> &'static str {
-    if std::process::Command::new("python").arg("--version").output().is_ok() {
-        "python"
-    } else {
-        "python3"
-    }
-}
+// fn find_python() -> &'static str {
+//     if std::process::Command::new("python").arg("--version").output().is_ok() {
+//         "python"
+//     } else {
+//         "python3"
+//     }
+// }
 
 async fn run_engine(config: TestConfig, target_cores: usize) {
     let cancel_token = CancellationToken::new();
@@ -225,27 +253,45 @@ async fn run_engine(config: TestConfig, target_cores: usize) {
 
     stats::save_to_csv(Arc::clone(&stats), &config.testname);
     
-    println!("📊 Generating report...");
-    let python = find_python();
+    // println!("📊 Generating report...");
+    // let python = find_python();
     
-    let _ = std::process::Command::new(python)
-        .arg("src/report.py")
-        .arg(format!("reports/{}_log.jsonl", config.testname))
-        .arg("--output")
-        .arg(format!("reports/{}_report.html", config.testname))
-        .status();
+    // let _ = std::process::Command::new(python)
+    //     .arg("src/report.py")
+    //     .arg(format!("reports/{}_log.jsonl", config.testname))
+    //     .arg("--output")
+    //     .arg(format!("reports/{}_report.html", config.testname))
+    //     .status();
 
+    // println!("\n🏁 Done.");
+
+    // rust's version 
+
+
+    println!("📊 Generating report...");
+
+    report::generate_report(
+        &format!("reports/{}_log.jsonl", config.testname),
+        &format!("reports/{}_report.html", config.testname),
+    );
+    
     println!("\n🏁 Done.");
+    
+
 
     println!("📊 Generating modern version of report...");
-    let python = find_python();
+    // let python = find_python();
+    report_modern::generate_report(
+        &format!("reports/{}_log.jsonl", config.testname),
+        &format!("reports/{}_report_modern.html", config.testname),
+    );
     
-    let _ = std::process::Command::new(python)
-        .arg("src/report_modern.py")
-        .arg(format!("reports/{}_log.jsonl", config.testname))
-        .arg("--output")
-        .arg(format!("reports/{}_report_modern.html", config.testname))
-        .status();
+    // let _ = std::process::Command::new(python)
+    //     .arg("src/report_modern.py")
+    //     .arg(format!("reports/{}_log.jsonl", config.testname))
+    //     .arg("--output")
+    //     .arg(format!("reports/{}_report_modern.html", config.testname))
+    //     .status();
 
     println!("\n🏁 Done.");
 

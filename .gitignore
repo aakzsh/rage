@@ -3,3 +3,4 @@ app.py
 venv/
 *.csv
 *.jsonl
+reports/
