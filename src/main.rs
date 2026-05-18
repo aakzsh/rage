@@ -1,35 +1,29 @@
+// src/main.rs
 mod config;
 mod stats;
 mod engine;
 mod logger;
 mod report;
 mod report_modern;
+mod utils; 
 
 use std::{fs, sync::{Arc, Mutex}, sync::atomic::{AtomicU64, Ordering}, time::{Duration, Instant}};
 use tokio::time::{sleep};
-use tokio_util::sync::CancellationToken; // Ensure tokio-util is in Cargo.toml
+use tokio_util::sync::CancellationToken; 
 use config::TestConfig;
 use stats::GlobalStats;
 use rlimit::{getrlimit, setrlimit, Resource};
 
-
 fn tune_system_limits() -> Result<(), Box<dyn std::error::Error>> {
-    // 1. Get the current limits
-    // Soft limit is what's currently enforced; Hard limit is the maximum allowed.
     let (soft, hard) = getrlimit(Resource::NOFILE)?;
     println!("Current ulimit -n: soft={}, hard={}", soft, hard);
 
-    // 2. Define your target (e.g., 64k or 100k)
     let target_limit = 65536;
-
-    // 3. Set the new limit
-    // We try to set the soft limit to our target, but we cannot exceed the hard limit.
     if soft < target_limit {
         let new_soft = target_limit.min(hard);
         setrlimit(Resource::NOFILE, new_soft, hard)?;
         println!("🚀 ulimit -n updated to {}", new_soft);
     }
-
     Ok(())
 }
 
@@ -65,14 +59,6 @@ fn main() {
     runtime.block_on(run_engine(config, target_cores));
 }
 
-// fn find_python() -> &'static str {
-//     if std::process::Command::new("python").arg("--version").output().is_ok() {
-//         "python"
-//     } else {
-//         "python3"
-//     }
-// }
-
 async fn run_engine(config: TestConfig, target_cores: usize) {
     let cancel_token = CancellationToken::new();
     let stats = Arc::new(Mutex::new(GlobalStats {
@@ -85,7 +71,6 @@ async fn run_engine(config: TestConfig, target_cores: usize) {
     let start_instant = stats.lock().unwrap().start_time;
     let log_tx = logger::spawn_logger(config.testname.clone());
 
-    // Higher connection pool for M4 Pro performance
     let client = Arc::new(reqwest::Client::builder()
         .tcp_nodelay(true)
         .pool_max_idle_per_host(5000) 
@@ -102,9 +87,20 @@ async fn run_engine(config: TestConfig, target_cores: usize) {
         target_cores
     );
 
+    // --- CSV BOOT LOADING PHASE ---
+    let csv_container = if config.csv_config != "none" {
+        println!("📂 Parsing data targets from source file: {}...", config.csv_config);
+        utils::CsvDataCache::load(&config.csv_config).map(Arc::new)
+    } else {
+        None
+    };
+
     let mut handles = vec![];
     let spawn_delay_ms = (config.rampup as f64 * 1000.0) / (config.users as f64).max(1.0);
     let global_ticker = Arc::new(AtomicU64::new(0));
+    
+    // Shared row sequence cursor distributed across worker threads
+    let global_csv_row_counter = Arc::new(AtomicU64::new(0));
 
     // --- WORKER SPAWNING ---
     for i in 0..config.users {
@@ -114,9 +110,11 @@ async fn run_engine(config: TestConfig, target_cores: usize) {
         let client_ref = Arc::clone(&client);
         let worker_log_tx = log_tx.clone();
         let token = cancel_token.clone();
+        
+        let csv_cache_ref = csv_container.clone();
+        let csv_counter_ref = Arc::clone(&global_csv_row_counter);
 
         let handle = tokio::spawn(async move {
-            // Ramp-up delay with cancellation check
             tokio::select! {
                 _ = token.cancelled() => return,
                 _ = sleep(Duration::from_millis((i as f64 * spawn_delay_ms) as u64)) => {}
@@ -133,6 +131,8 @@ async fn run_engine(config: TestConfig, target_cores: usize) {
                 global_remaining
             };
         
+            let mut user_context: std::collections::HashMap<String, String> = std::collections::HashMap::with_capacity(4);
+            
             let worker_logic = async {
                 let mut req_counter = 0;
                 loop {
@@ -179,25 +179,96 @@ async fn run_engine(config: TestConfig, target_cores: usize) {
                                 }
                             }
         
-                            let endpoint = details.get("endpoint").and_then(|v| v.as_str()).unwrap_or("/");
+                            // Fetch an atomic row sequence index for this request step execution
+                            let my_request_row = csv_counter_ref.fetch_add(1, Ordering::Relaxed) as usize;
+
+                            // --- 1. RESOLVE THE ENDPOINT WITH DYNAMIC EVALUATION ---
+                            let raw_endpoint = details.get("endpoint").and_then(|v| v.as_str()).unwrap_or("/");
+                            let resolved_endpoint = crate::utils::resolve_variables(
+                                raw_endpoint, 
+                                &user_context,
+                                &csv_cache_ref,
+                                my_request_row
+                            ).into_owned();
                             let method_upper = method.to_uppercase();
+
+                            // --- 2. COMPILE HEADERS MATRIX AND SWAP CACHED TOKENS ---
+                            let mut merged_headers = std::collections::HashMap::new();
+                            for (k, v) in &cfg.common_headers {
+                                merged_headers.insert(k.clone(), v.clone());
+                            }
+
+                            if let Some(step_headers_val) = details.get("headers") {
+                                if let Some(step_headers) = step_headers_val.as_mapping() {
+                                    for (k, v) in step_headers {
+                                        if let (Some(k_str), Some(v_str)) = (k.as_str(), v.as_str()) {
+                                            let resolved_val = crate::utils::resolve_variables(
+                                                v_str, 
+                                                &user_context,
+                                                &csv_cache_ref,
+                                                my_request_row
+                                            ).into_owned();
+                                            merged_headers.insert(k_str.to_string(), resolved_val);
+                                        }
+                                    }
+                                }
+                            }
+
+                            // --- 3. EXPORT AND TRANSLATE PAYLOAD STRINGS FOR INLINE PARSING ---
+                            let raw_body_yaml = details.get("body")
+                                .map(|v| serde_yaml::to_string(v).unwrap_or_default())
+                                .unwrap_or_default();
+                            
+                            let resolved_body_yaml = crate::utils::resolve_variables(
+                                &raw_body_yaml, 
+                                &user_context,
+                                &csv_cache_ref,
+                                my_request_row
+                            ).into_owned();
+
+                            let request_body = serde_yaml::from_str::<serde_yaml::Value>(&resolved_body_yaml)
+                                .unwrap_or(serde_yaml::Value::Null);
+
                             let req_start = Instant::now();
                             
-                            let is_success = engine::execute_request(
+                            // --- 4. EXECUTE TARGET REQUEST ---
+                            let response_result = engine::execute_request(
                                 &client_ref, 
                                 &cfg.host, 
                                 &method_upper, 
-                                endpoint, 
-                                &serde_yaml::to_value(details).unwrap(), 
-                                &Some(cfg.common_headers.clone())
+                                &resolved_endpoint, 
+                                &request_body, 
+                                &Some(merged_headers)
                             ).await;
         
+                            let is_success = response_result.is_ok();
                             let duration = req_start.elapsed();
                             req_counter += 1;
         
+                            // --- 5. ENGINE DYNAMIC VARIABLE CAPTURE (CORRELATION) ---
+                            if let Ok(raw_response_body) = &response_result {
+                                if let Some(capture_val) = details.get("capture") {
+                                    if let Some(capture_rules) = capture_val.as_mapping() {
+                                        if let Ok(json_tree) = serde_json::from_str::<serde_json::Value>(raw_response_body) {
+                                            for (var_name_key, json_path_key) in capture_rules {
+                                                if let (Some(var_name), Some(json_path)) = (var_name_key.as_str(), json_path_key.as_str()) {
+                                                    let field = json_path.replace("json.", "");
+                                                    if let Some(extracted_val) = json_tree.get(&field) {
+                                                        if let Some(val_str) = extracted_val.as_str() {
+                                                            user_context.insert(var_name.to_string(), val_str.to_string());
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // --- METRICS RECORDING ---
                             let current_active = {
                                 let mut s = stats_clone.lock().unwrap();
-                                let entry = s.endpoints.entry(format!("{} {}", method_upper, endpoint)).or_default();
+                                let entry = s.endpoints.entry(format!("{} {}", method_upper, resolved_endpoint)).or_default();
                                 entry.requests += 1;
                                 if is_success { entry.success += 1; } else { entry.failure += 1; }
                                 entry.total_response_time += duration;
@@ -210,7 +281,7 @@ async fn run_engine(config: TestConfig, target_cores: usize) {
                                 let _ = worker_log_tx.send(logger::LogEvent {
                                     timestamp: start_instant.elapsed().as_secs(),
                                     event_type: "request".to_string(),
-                                    endpoint: Some(endpoint.to_string()),
+                                    endpoint: Some(resolved_endpoint),
                                     response_time_ms: Some(duration.as_millis()),
                                     status: Some(is_success),
                                     tps: 0.0,
@@ -247,53 +318,23 @@ async fn run_engine(config: TestConfig, target_cores: usize) {
         }
     }
 
-    cancel_token.cancel(); // Signal all workers to drop work
+    cancel_token.cancel(); 
     println!("⏳ Flushing logs and waiting for workers...");
     sleep(Duration::from_secs(3)).await;
 
     stats::save_to_csv(Arc::clone(&stats), &config.testname);
     
-    // println!("📊 Generating report...");
-    // let python = find_python();
-    
-    // let _ = std::process::Command::new(python)
-    //     .arg("src/report.py")
-    //     .arg(format!("reports/{}_log.jsonl", config.testname))
-    //     .arg("--output")
-    //     .arg(format!("reports/{}_report.html", config.testname))
-    //     .status();
-
-    // println!("\n🏁 Done.");
-
-    // rust's version 
-
-
     println!("📊 Generating report...");
-
     report::generate_report(
         &format!("reports/{}_log.jsonl", config.testname),
         &format!("reports/{}_report.html", config.testname),
     );
-    
     println!("\n🏁 Done.");
-    
-
 
     println!("📊 Generating modern version of report...");
-    // let python = find_python();
     report_modern::generate_report(
         &format!("reports/{}_log.jsonl", config.testname),
         &format!("reports/{}_report_modern.html", config.testname),
     );
-    
-    // let _ = std::process::Command::new(python)
-    //     .arg("src/report_modern.py")
-    //     .arg(format!("reports/{}_log.jsonl", config.testname))
-    //     .arg("--output")
-    //     .arg(format!("reports/{}_report_modern.html", config.testname))
-    //     .status();
-
     println!("\n🏁 Done.");
-
-
 }

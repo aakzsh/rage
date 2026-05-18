@@ -1,6 +1,9 @@
 target/
 app.py
 venv/
-*.csv
 *.jsonl
-reports/
+reports/*.jsonl
+reports/*.html
+reports/*.csv
+# reports/
+# *.csv

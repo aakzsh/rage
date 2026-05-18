@@ -1,36 +1,58 @@
-use std::collections::HashMap;
-use reqwest::Client;
-use serde_yaml::Value;
+// src/engine.rs
 
 pub async fn execute_request(
-    client: &Client, 
-    host: &str, 
-    method: &str, 
-    endpoint: &str, 
-    details: &Value,
-    common_headers: &Option<HashMap<String, String>>
-) -> bool {
-    let url = format!("{}{}", host.trim_end_matches('/'), endpoint);
+    client: &reqwest::Client,
+    host: &str,
+    method: &str,
+    endpoint: &str,
+    body: &serde_yaml::Value,
+    headers: &Option<std::collections::HashMap<String, String>>,
+) -> Result<String, String> {
     
-    let mut rb = match method {
-        "GET" => client.get(&url),
-        "POST" => client.post(&url).json(&details.get("body").unwrap_or(&Value::Null)),
-        _ => return false,
+    let url = format!("{}{}", host, endpoint);
+    
+    // Map HTTP methods...
+    let http_method = match method {
+        "POST" => reqwest::Method::POST,
+        "PUT" => reqwest::Method::PUT,
+        _ => reqwest::Method::GET,
     };
 
-    if let Some(headers) = common_headers {
-        for (k, v) in headers {
-            rb = rb.header(k, v);
-        }
-    }
+    let mut req_builder = client.request(http_method, &url);
 
-    if let Some(step_headers) = details.get("headers").and_then(|h| h.as_mapping()) {
-        for (k, v) in step_headers {
-            if let (Some(key), Some(val)) = (k.as_str(), v.as_str()) {
-                rb = rb.header(key, val);
+    // Apply headers if present
+    if let Some(hdrs) = headers {
+        let mut header_map = reqwest::header::HeaderMap::new();
+        for (k, v) in hdrs {
+            if let Ok(name) = reqwest::header::HeaderName::from_bytes(k.as_bytes()) {
+                if let Ok(val) = reqwest::header::HeaderValue::from_str(v) {
+                    header_map.insert(name, val);
+                }
             }
         }
+        req_builder = req_builder.headers(header_map);
     }
 
-    rb.send().await.map(|r| r.status().is_success()).unwrap_or(false)
+    // Attach body if it's not Null
+    if *body != serde_yaml::Value::Null {
+        if let Ok(json_body) = serde_json::to_value(body) {
+            req_builder = req_builder.json(&json_body);
+        }
+    }
+
+    // Execute the request
+    match req_builder.send().await {
+        Ok(res) => {
+            let status = res.status();
+            // Fetch the raw body string
+            let text = res.text().await.unwrap_or_default();
+            
+            if status.is_success() {
+                Ok(text) 
+            } else {
+                Err(format!("HTTP Status Error: {}", status)) 
+            }
+        }
+        Err(e) => Err(e.to_string()), 
+    }
 }

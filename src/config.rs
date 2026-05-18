@@ -1,6 +1,22 @@
-use serde::Deserialize;
+
+#[allow(unused_imports)]
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use serde_yaml::Value;
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize)]
+pub struct StepDetails {
+    pub endpoint: String,
+    // Using serde(default) ensures that if a step doesn't have headers/body/capture, 
+    // it won't throw a parsing error; it will just default to None.
+    #[serde(default)]
+    pub headers: Option<HashMap<String, String>>, 
+    #[serde(default)]
+    pub body: Option<serde_json::Value>,
+    #[serde(default)]
+    pub capture: Option<HashMap<String, String>>, 
+}
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct TestConfig {
@@ -31,13 +47,14 @@ pub struct TestConfig {
     /// Global headers applied to every request
     pub common_headers: HashMap<String, String>,
 
-    /// The sequence of API calls to execute
-    pub steps: Vec<HashMap<String, HashMap<String, Value>>>,
+    /// CHANGED: Use your custom StepDetails struct instead of a generic nested HashMap
+    pub steps: Vec<HashMap<String, Value>>,
 
     /// Optional sleep time between steps (only used if peak_tps is not set)
     pub sleep: Option<u64>,
 
     pub session_duration: Option<u64>,
+    pub csv_config: String,
 }
 
 /// Default value for max_cores if omitted from YAML
