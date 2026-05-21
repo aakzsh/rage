@@ -386,7 +386,7 @@ pub fn generate_report(input: &str, output: &str) {
 
 <meta charset="UTF-8">
 
-<title>RAGE // SYSTEM EXECUTION REPORT</title>
+<title>RAGE DASHBOARD | MODERN</title>
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
@@ -668,7 +668,7 @@ tr:hover {{
     <div class="title">RAGE</div>
 
     <div class="subtitle">
-        SYSTEM ANNIHILATION REPORT · LIVE LOAD WARFARE ANALYTICS
+        SYSTEM LOAD REPORT
     </div>
 
 </div>

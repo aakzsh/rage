@@ -1,3 +1,3 @@
-email,password
-aakash@lol.com,1234
-aakash@sss.com,2345
+email,password,device_id,first_name,last_name,phone,dob,language,marketing_opt_in,addr_line1,addr_line2,city,state,zip,country,product_a,product_b,product_c,qty_a,qty_b,qty_c,qty_a2,search_query,coupon,pay_method,otp,rating,review,ticket_subject,ticket_message,ticket_followup
+rohit.patel1@test.com,pass5064,dev000001,Rohit,Patel,9797353975,1989-05-29,hi,true,132 Nehru Place,Apt 892,Noida,UP,201301,India,127,122,121,1,1,5,4,camera,SAVE15,netbanking,629835,3,Very useful,Order Issue,Package not delivered yet,Please check status
+riya.gupta2@test.com,pass8951,dev000002,Riya,Gupta,9389291927,1981-12-31,hi,false,363 Park Street,Apt 139,Pune,MH,411001,India,191,157,114,3,2,4,5,camera,SALE20,netbanking,118710,3,Fast delivery,Delivery Delay,Package not delivered yet,Need urgent help

@@ -2,7 +2,7 @@
 
 A minimal, high-performance load testing engine focused on stripping scripting overhead and squeezing maximum efficiency out of your load-generator hardware.
 
-<img src="RAGE_NEW.png"/>
+<img src="images/RAGE_NEW.png"/>
 
 ## Features & Milestone Updates
 

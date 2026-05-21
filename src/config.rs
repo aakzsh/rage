@@ -1,7 +1,7 @@
 
 #[allow(unused_imports)]
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::{collections::HashMap};
 use serde_yaml::Value;
 
 #[allow(dead_code)]
@@ -51,7 +51,7 @@ pub struct TestConfig {
     pub steps: Vec<HashMap<String, Value>>,
 
     /// Optional sleep time between steps (only used if peak_tps is not set)
-    pub sleep: Option<u64>,
+    pub sleep: Option<f64>,
 
     pub session_duration: Option<u64>,
     pub csv_config: String,

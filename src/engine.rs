@@ -15,6 +15,7 @@ pub async fn execute_request(
     let http_method = match method {
         "POST" => reqwest::Method::POST,
         "PUT" => reqwest::Method::PUT,
+        "DELETE" => reqwest::Method::DELETE,
         _ => reqwest::Method::GET,
     };
 

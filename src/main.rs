@@ -292,7 +292,7 @@ async fn run_engine(config: TestConfig, target_cores: usize) {
                             }
         
                             if cfg.peak_tps.is_none() {
-                                if let Some(sl) = cfg.sleep { sleep(Duration::from_secs(sl)).await; }
+                                if let Some(sl) = cfg.sleep { sleep(Duration::from_secs_f64(sl)).await; }
                             }
                         }
                     }

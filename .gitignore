@@ -7,3 +7,8 @@ reports/*.html
 reports/*.csv
 # reports/
 # *.csv
+users_data.csv
+gen_udata.py
+locustfile.py
+test.js
+.DS_Store

@@ -1,29 +1,409 @@
 # test.yaml
 host: "http://127.0.0.1:8080"
-testname: "300k"
+testname: "10k_tps_benchmarking"
 max_cores: -1
-users: 300000
-rampup: 75
-session_duration: 150
+users: 10000
+rampup: 60
+session_duration: 120
 runtime: 230
-sleep: 20
+sleep: 0.33
 csv_config: "users.csv"
+common_headers:
+  platform: "bench"
+  content-type: "application/json"
+
 steps:
-  - get:
-      endpoint: "/v1/login"
-      capture:
-        token: "json.token"
+  # 1) LOGIN (captures token + user_id + session_id)
   - post:
-      endpoint: "/v1/contact"
-      headers: {"X-Priority": "High", "Authorization": "Bearer $token"}
+      endpoint: "/v1/auth/login"
+      headers:
+        X-Flow: "bench"
       body:
         email: "$csv.email"
+        password: "$csv.password"
+        device_id: "$csv.device_id"
+      capture:
+        token: "json.token"
+        user_id: "json.user_id"
+        session_id: "json.session_id"
+
+  # 2) SESSION CHECK
   - get:
-      endpoint: "/v2/profile"
+      endpoint: "/v1/auth/session/$session_id"
+      headers:
+        Authorization: "Bearer $token"
+
+  # 3) PROFILE GET
   - get:
-      endpoint: "/v1/products/list"
+      endpoint: "/v1/users/$user_id/profile"
+      headers:
+        Authorization: "Bearer $token"
+
+  # 4) PROFILE UPDATE
+  - put:
+      endpoint: "/v1/users/$user_id/profile"
+      headers:
+        Authorization: "Bearer $token"
+      body:
+        first_name: "$csv.first_name"
+        last_name: "$csv.last_name"
+        phone: "$csv.phone"
+        dob: "$csv.dob"
+
+  # 5) PREFERENCES GET
+  - get:
+      endpoint: "/v1/users/$user_id/preferences"
+      headers:
+        Authorization: "Bearer $token"
+
+  # 6) PREFERENCES UPDATE
+  - put:
+      endpoint: "/v1/users/$user_id/preferences"
+      headers:
+        Authorization: "Bearer $token"
+      body:
+        language: "$csv.language"
+        marketing_opt_in: "$csv.marketing_opt_in"
+
+  # 7) ADDRESS LIST
+  - get:
+      endpoint: "/v1/users/$user_id/addresses"
+      headers:
+        Authorization: "Bearer $token"
+
+  # 8) ADDRESS CREATE (capture address_id)
   - post:
-      endpoint: "/v1/cart/add"
-      body: {"item_id": 101, "qty": 1}
-common_headers:
-  platform: "web"
+      endpoint: "/v1/users/$user_id/addresses"
+      headers:
+        Authorization: "Bearer $token"
+      body:
+        line1: "$csv.addr_line1"
+        line2: "$csv.addr_line2"
+        city: "$csv.city"
+        state: "$csv.state"
+        zip: "$csv.zip"
+        country: "$csv.country"
+      capture:
+        address_id: "json.address_id"
+
+  # 9) ADDRESS UPDATE
+  - put:
+      endpoint: "/v1/users/$user_id/addresses/$address_id"
+      headers:
+        Authorization: "Bearer $token"
+      body:
+        line1: "$csv.addr_line1"
+        line2: "$csv.addr_line2"
+        city: "$csv.city"
+        state: "$csv.state"
+        zip: "$csv.zip"
+
+  # 10) ADDRESS GET (confirm)
+  - get:
+      endpoint: "/v1/users/$user_id/addresses/$address_id"
+      headers:
+        Authorization: "Bearer $token"
+
+  # 11) CATEGORIES
+  - get:
+      endpoint: "/v1/catalog/categories"
+      headers:
+        Authorization: "Bearer $token"
+
+  # 12) FEATURED
+  - get:
+      endpoint: "/v1/catalog/featured"
+      headers:
+        Authorization: "Bearer $token"
+
+  # 13) LIST PRODUCTS PAGE 1
+  - get:
+      endpoint: "/v1/catalog/products?page=1&size=20"
+      headers:
+        Authorization: "Bearer $token"
+
+  # 14) LIST PRODUCTS PAGE 2
+  - get:
+      endpoint: "/v1/catalog/products?page=2&size=20"
+      headers:
+        Authorization: "Bearer $token"
+
+  # 15) PRODUCT DETAILS 1
+  - get:
+      endpoint: "/v1/products/$csv.product_a"
+      headers:
+        Authorization: "Bearer $token"
+
+  # 16) PRODUCT DETAILS 2
+  - get:
+      endpoint: "/v1/products/$csv.product_b"
+      headers:
+        Authorization: "Bearer $token"
+
+  # 17) PRODUCT DETAILS 3
+  - get:
+      endpoint: "/v1/products/$csv.product_c"
+      headers:
+        Authorization: "Bearer $token"
+
+  # 18) SEARCH
+  - get:
+      endpoint: "/v1/search?q=$csv.search_query&page=1"
+      headers:
+        Authorization: "Bearer $token"
+
+  # 19) ADD RECENTLY VIEWED
+  - post:
+      endpoint: "/v1/users/$user_id/recently_viewed"
+      headers:
+        Authorization: "Bearer $token"
+      body:
+        product_id: "$csv.product_a"
+
+  # 20) GET RECENTLY VIEWED
+  - get:
+      endpoint: "/v1/users/$user_id/recently_viewed"
+      headers:
+        Authorization: "Bearer $token"
+
+  # 21) RECOMMENDATIONS
+  - get:
+      endpoint: "/v1/recommendations?user_id=$user_id"
+      headers:
+        Authorization: "Bearer $token"
+
+  # 22) INVENTORY CHECK A
+  - get:
+      endpoint: "/v1/inventory/$csv.product_a"
+      headers:
+        Authorization: "Bearer $token"
+
+  # 23) INVENTORY CHECK B
+  - get:
+      endpoint: "/v1/inventory/$csv.product_b"
+      headers:
+        Authorization: "Bearer $token"
+
+  # 24) CART CREATE (capture cart_id)
+  - post:
+      endpoint: "/v1/cart"
+      headers:
+        Authorization: "Bearer $token"
+      body:
+        user_id: "$user_id"
+      capture:
+        cart_id: "json.cart_id"
+
+  # 25) CART GET
+  - get:
+      endpoint: "/v1/cart/$cart_id"
+      headers:
+        Authorization: "Bearer $token"
+
+  # 26) CART ADD ITEM A (capture item_a_id)
+  - post:
+      endpoint: "/v1/cart/$cart_id/items"
+      headers:
+        Authorization: "Bearer $token"
+      body:
+        product_id: "$csv.product_a"
+        qty: "$csv.qty_a"
+      capture:
+        item_a_id: "json.item_id"
+
+  # 27) CART ADD ITEM B (capture item_b_id)
+  - post:
+      endpoint: "/v1/cart/$cart_id/items"
+      headers:
+        Authorization: "Bearer $token"
+      body:
+        product_id: "$csv.product_b"
+        qty: "$csv.qty_b"
+      capture:
+        item_b_id: "json.item_id"
+
+  # 28) CART ADD ITEM C (capture item_c_id)
+  - post:
+      endpoint: "/v1/cart/$cart_id/items"
+      headers:
+        Authorization: "Bearer $token"
+      body:
+        product_id: "$csv.product_c"
+        qty: "$csv.qty_c"
+      capture:
+        item_c_id: "json.item_id"
+
+  # 29) CART UPDATE ITEM A QTY
+  - put:
+      endpoint: "/v1/cart/$cart_id/items/$item_a_id"
+      headers:
+        Authorization: "Bearer $token"
+      body:
+        qty: "$csv.qty_a2"
+
+  # 30) CART REMOVE ITEM B
+  - delete:
+      endpoint: "/v1/cart/$cart_id/items/$item_b_id"
+      headers:
+        Authorization: "Bearer $token"
+
+  # 31) CART GET (after mutations)
+  - get:
+      endpoint: "/v1/cart/$cart_id"
+      headers:
+        Authorization: "Bearer $token"
+
+  # 32) SHIPPING QUOTE
+  - post:
+      endpoint: "/v1/shipping/quote"
+      headers:
+        Authorization: "Bearer $token"
+      body:
+        cart_id: "$cart_id"
+        address_id: "$address_id"
+
+  # 33) PRICING BREAKDOWN
+  - get:
+      endpoint: "/v1/cart/$cart_id/pricing"
+      headers:
+        Authorization: "Bearer $token"
+
+  # 34) COUPON VALIDATE
+  - post:
+      endpoint: "/v1/coupons/validate"
+      headers:
+        Authorization: "Bearer $token"
+      body:
+        code: "$csv.coupon"
+
+  # 35) APPLY COUPON (capture discount_id)
+  - post:
+      endpoint: "/v1/cart/$cart_id/apply_coupon"
+      headers:
+        Authorization: "Bearer $token"
+      body:
+        code: "$csv.coupon"
+      capture:
+        discount_id: "json.discount_id"
+
+  # 36) ORDER PREVIEW (capture order_id)
+  - post:
+      endpoint: "/v1/orders/preview"
+      headers:
+        Authorization: "Bearer $token"
+      body:
+        cart_id: "$cart_id"
+        address_id: "$address_id"
+        discount_id: "$discount_id"
+      capture:
+        order_id: "json.order_id"
+
+  # 37) PAYMENT INIT (capture payment_id)
+  - post:
+      endpoint: "/v1/payments/init"
+      headers:
+        Authorization: "Bearer $token"
+      body:
+        order_id: "$order_id"
+        method: "$csv.pay_method"
+      capture:
+        payment_id: "json.payment_id"
+
+  # 38) PAYMENT AUTHORIZE
+  - post:
+      endpoint: "/v1/payments/authorize/$payment_id"
+      headers:
+        Authorization: "Bearer $token"
+      body:
+        otp: "$csv.otp"
+
+  # 39) ORDER CONFIRM
+  - post:
+      endpoint: "/v1/orders/$order_id/confirm"
+      headers:
+        Authorization: "Bearer $token"
+      body:
+        payment_id: "$payment_id"
+
+  # 40) ORDER GET
+  - get:
+      endpoint: "/v1/orders/$order_id"
+      headers:
+        Authorization: "Bearer $token"
+
+  # 41) ORDER STATUS
+  - get:
+      endpoint: "/v1/orders/$order_id/status"
+      headers:
+        Authorization: "Bearer $token"
+
+  # 42) ORDER INVOICE
+  - get:
+      endpoint: "/v1/orders/$order_id/invoice"
+      headers:
+        Authorization: "Bearer $token"
+
+  # 43) ORDER ITEMS LIST
+  - get:
+      endpoint: "/v1/orders/$order_id/items"
+      headers:
+        Authorization: "Bearer $token"
+
+  # 44) RATE ORDER (POST)
+  - post:
+      endpoint: "/v1/orders/$order_id/rate"
+      headers:
+        Authorization: "Bearer $token"
+      body:
+        rating: "$csv.rating"
+        comment: "$csv.review"
+
+  # 45) SUPPORT TICKET CREATE (capture ticket_id)
+  - post:
+      endpoint: "/v1/support/tickets"
+      headers:
+        Authorization: "Bearer $token"
+      body:
+        user_id: "$user_id"
+        order_id: "$order_id"
+        subject: "$csv.ticket_subject"
+        message: "$csv.ticket_message"
+      capture:
+        ticket_id: "json.ticket_id"
+
+  # 46) SUPPORT TICKET COMMENT
+  - post:
+      endpoint: "/v1/support/tickets/$ticket_id/comment"
+      headers:
+        Authorization: "Bearer $token"
+      body:
+        message: "$csv.ticket_followup"
+
+  # 47) SUPPORT TICKET GET
+  - get:
+      endpoint: "/v1/support/tickets/$ticket_id"
+      headers:
+        Authorization: "Bearer $token"
+
+  # 48) NOTIFICATIONS LIST
+  - get:
+      endpoint: "/v1/notifications?user_id=$user_id"
+      headers:
+        Authorization: "Bearer $token"
+
+  # 49) MARK NOTIFICATIONS READ
+  - post:
+      endpoint: "/v1/notifications/mark_read"
+      headers:
+        Authorization: "Bearer $token"
+      body:
+        user_id: "$user_id"
+        scope: "all"
+
+  # 50) LOGOUT
+  - post:
+      endpoint: "/v1/auth/logout"
+      headers:
+        Authorization: "Bearer $token"
+      body:
+        session_id: "$session_id"
