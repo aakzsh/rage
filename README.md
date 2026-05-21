@@ -1,89 +1,121 @@
 # RAGE
 
-A minimal, high-performance load testing engine focused on stripping scripting overhead and squeezing maximum efficiency out of your load-generator hardware.
+A high-performance load testing engine written in Rust, focused on maximizing throughput and handling extreme concurrency without scripting overhead.
 
-<img src="images/RAGE_NEW.png"/>
+![Rage](images/RAGE_NEW.png)
 
-## Features & Milestone Updates
+***
 
-### Core Capabilities
+## Overview
 
-* **Scale:** Multi-user & target TPS management.
-* **REST Ecosystem:** Full support for standard verbs, query parameters, dynamic headers, and JSON bodies.
-* **Data Flow:** CSV seeding per virtual user (VU) and runtime variable injection (token chaining).
-* **Reporting:** Real-time CLI output, raw CSV archiving, and HTML dashboards.
+Most load testing tools start breaking once you push into very high concurrency or TPS ranges, mainly due to runtime overhead.
 
-### Resolved Performance Optimizations
+RAGE keeps things simple:
 
-* **Multi-Core Scaling:** Fully optimized. Spreads execution across all available logical cores instead of bottlenecking on a single core.
-* **Network & Resource Telemetry:** Fixed ingress/egress reporting accuracy. System memory usage tracking updated to precise percentages.
-* **VUs Metric:** Implemented a real-time active users graph in the HTML/JSON reporting view.
-* **Internal Layers:** Validated API pacing loops for tight TPS enforcement and clean dashboard updates.
+* minimal abstractions
+* direct execution loops
+* predictable pacing
 
----
+***
 
-## Rust Environment Setup
+## Features
 
-### 1. Install Rust Toolchain
+* High concurrency support (100k+ users)
+* Controlled TPS execution
+* Multi-core utilization
+* CSV-based data input
+* Dynamic variable handling (token chaining)
+* Support for REST APIs (GET/POST/DELETE, headers, body, params)
+* Reporting (CLI, CSV, HTML)
 
-* **Linux / macOS:**
-```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+***
 
-```
+## Benchmark
 
+### Tool Comparison
 
-*(Restart your terminal or run `source $HOME/.cargo/env` after completion).*
-* **Windows:** Download and run `rustup-init.exe` from [rustup.rs](https://rustup.rs/). *Requires Visual Studio Build Tools with C++ workload.*
+| Users | TPS | Locust | k6 | RAGE |
+| ----- | --- | ------ | -- | ---- |
+| 1k    | 100 | ✔      | ✔  | ✔    |
+| 10k   | 1k  | ✔      | ✔  | ✔    |
+| 100k  | 10k | ✖      | ✖  | ✔    |
+| 200k  | 20k | ✖      | ✖  | ⚠    |
+| 200k  | 10k | ✖      | ✖  | ✔    |
+| 300k  | 13k | ✖      | ✖  | ✔    |
+| 400k  | 10k | ✖      | ✖  | ✔    |
+| 420k  | 10k | ✖      | ✖  | ⚠    |
+| 10k   | 20k | ⚠      | ✔  | ✔    |
+| 10k   | 30k | ✖      | ✔  | ✔    |
+| 10k   | 40k | ✖      | ✔  | ⚠    |
+| 10k   | 50k | ✖      | ✖  | ✖    |
 
-### 2. Verify
+Legend:
 
-```bash
-cargo --version
+* ✔ supported / successful execution
+* ⚠ partial / hit bottleneck
+* ✖ failed
 
-```
+<b>Note</b>: A test execution is considered successful only if throughout the test the CPU/Memory utilisations were strictly under 80%. And these numbers are bound to vary across different machines. The aim of benchmarking was to only compare the different tools on the exact same machine infra. These tests were run on Apple M4 Pro chip with 24GB RAM and 512GB total storage.
+***
 
-### 3. Run a Test
+## Benchmark Summary
 
-Always run with the `--release` flag to strip debugging overhead and enable compiler optimizations necessary to sustain massive load simulations:
+* \~400k concurrent users reached
+* Stable around 10k TPS at scale
+* Peak \~30k TPS observed
+* Handles scenarios where Locust and k6 fail
 
-```bash
-cargo run --release
+***
 
-```
+## Benchmark Reports
 
----
+* users scaling → `reports/400k_users_benchmarking.html`
+* TPS benchmarking → `reports/30k_tps_benchmarking.html`
 
-## YAML Configuration Specification
+***
 
-Your `test.yaml` maps out execution params and scenarios using simple key-value pairings, indented structures, and arrays (`-`).
+## Runtime View
 
-### Metadata & Control Parameters
+![Realtime Report](images/realtime-report.png)
 
-* **`host`**: Root URL targeting the system under test.
-* **`testname`**: Identifier tag for output metrics and reports.
-* **`max_cores`**: Resource allocation limit. `-1` commands RAGE to spin up workers across all available CPU threads.
-* **`users`**: Target concurrency envelope ($300,000$ virtual users).
-* **`rampup`**: Duration (in seconds) to linearly scale up active threads to full capacity.
-* **`session_duration` / `runtime`**: Boundary configurations controlling thread lifetimes and global test duration bounds (in seconds).
-* **`sleep`**: Default pacing interval (in milliseconds) executed between operational steps to prevent instant runner exhaustion.
-* **`csv_config`**: External text array containing user parameters (e.g., email data fields) used for runtime query mapping.
-
-### Step Syntax & Execution Mapping
-
-RAGE interprets steps as sequential executions down an array layer.
-
-* **Method blocks (`get:`, `post:`)**: Dictate request type.
-* **`capture:`**: Binds runtime response paths (like `json.token`) into internal string identifiers (`$token`).
-* **Variable References**: Prefixed with `$` (e.g., `$token` dynamically pulls from memory, `$csv.email` reads sequentially from `users.csv`).
-* **`common_headers`**: Base key-value pairs appended globally across every endpoint signature inside the scenario list.
-
-## Runtime Reporting Format
-This is how the reports look like while the test is still running
-
-![CMD Report](images/realtime-report.png)
+***
 
 ## Final HTML Report
-This is how the simple version of the report looks like after the completion of the test.
 
-![alt text](images/aftertest-report.png)
+![Final Report](images/aftertest-report.png)
+
+***
+
+## Setup
+
+```bash
+curl https://sh.rustup.rs -sSf | sh
+source $HOME/.cargo/env
+
+cargo run --release
+```
+
+***
+
+## Config Example
+
+```yaml
+host: https://api.example.com
+users: 100000
+rampup: 60
+runtime: 300
+sleep: 100
+
+steps:
+  - get:
+      url: /health
+```
+
+***
+
+## Use Cases
+
+* High concurrency testing (100k+ users)
+* TPS-bound testing
+* Finding backend limits under sustained load
+

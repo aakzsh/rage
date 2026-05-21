@@ -12,3 +12,7 @@ gen_udata.py
 locustfile.py
 test.js
 .DS_Store
+
+# allow list
+!reports/400k_users_benchmarking.html
+!reports/30k_tps_benchmarking.html
